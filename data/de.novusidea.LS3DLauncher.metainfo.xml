@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>de.novusidea.LS3DLauncher</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>LS3D Launcher</name>
+  <summary>Unofficial launcher for WBS LearnSpace 3D</summary>
+  <summary xml:lang="de">Inoffizieller Starter für WBS LearnSpace 3D</summary>
+
+  <developer id="de.novusidea">
+    <name>novusidea</name>
+  </developer>
+
+  <description>
+    <p>
+      LS3D Launcher installs and runs the Windows version of WBS LearnSpace 3D on Linux
+      using Wine and DXVK. It opens ls3d:// links from your browser and connects to the
+      requested backend server.
+    </p>
+    <p xml:lang="de">
+      Der LS3D Launcher installiert die Windows-Version von WBS LearnSpace 3D unter Linux
+      und startet sie mit Wine und DXVK. Er öffnet ls3d://-Links aus dem Browser und verbindet
+      sich mit dem angegebenen Backend-Server.
+    </p>
+    <p>
+      This is an unofficial project and is not affiliated with WBS Training AG. LearnSpace 3D
+      itself is proprietary software and is not included: on first launch the official
+      installer is downloaded from the WBS servers and run inside the sandbox.
+      A WBS account is required to use LearnSpace 3D.
+    </p>
+    <p xml:lang="de">
+      Dies ist ein inoffizielles Projekt ohne Verbindung zur WBS Training AG. LearnSpace 3D
+      selbst ist proprietäre Software und nicht enthalten: Beim ersten Start wird der offizielle
+      Installer von den WBS-Servern heruntergeladen und in der Sandbox ausgeführt.
+      Für die Nutzung ist ein WBS-Zugang erforderlich.
+    </p>
+    <p>Features:</p>
+    <p xml:lang="de">Funktionen:</p>
+    <ul>
+      <li>Handler for ls3d:// links</li>
+      <li xml:lang="de">Handler für ls3d://-Links</li>
+      <li>Bundled DXVK for Direct3D on Vulkan</li>
+      <li xml:lang="de">Mitgeliefertes DXVK für Direct3D über Vulkan</li>
+      <li>Frame rate limited to 60 FPS to save power</li>
+      <li xml:lang="de">Bildrate auf 60 FPS begrenzt, um Strom zu sparen</li>
+      <li>Optional NVIDIA render offload on hybrid graphics</li>
+      <li xml:lang="de">Optionales NVIDIA Render Offload bei Hybrid-Grafik</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">de.novusidea.LS3DLauncher.desktop</launchable>
+  <provides>
+    <binary>ls3d-launcher</binary>
+    <mediatype>x-scheme-handler/ls3d</mediatype>
+  </provides>
+
+  <url type="homepage">https://github.com/novusidea/ls3d-flatpak</url>
+  <url type="bugtracker">https://github.com/novusidea/ls3d-flatpak/issues</url>
+  <url type="vcs-browser">https://github.com/novusidea/ls3d-flatpak</url>
+  <update_contact>info@novusidea.de</update_contact>
+
+  <categories>
+    <category>Education</category>
+  </categories>
+  <keywords>
+    <keyword>LearnSpace</keyword>
+    <keyword>LS3D</keyword>
+    <keyword>WBS</keyword>
+  </keywords>
+
+  <requires>
+    <internet>always</internet>
+  </requires>
+  <recommends>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </recommends>
+  <supports>
+    <display_length compare="ge">768</display_length>
+  </supports>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#8fd3ff</color>
+    <color type="primary" scheme_preference="dark">#1c4a7a</color>
+  </branding>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="1.0.0" date="2026-10-29">
+      <description>
+        <p>First release.</p>
+        <p xml:lang="de">Erste Version.</p>
+      </description>
+    </release>
+  </releases>
+</component>

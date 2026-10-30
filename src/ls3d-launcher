@@ -1,0 +1,306 @@
+#!/bin/bash
+# LS3D Launcher - inoffizieller Starter für WBS LearnSpace 3D (Windows-Version unter Wine)
+#
+# Läuft innerhalb der Flatpak-Sandbox. Beim ersten Start wird ein Wine-Prefix
+# angelegt, DXVK eingerichtet und der offizielle WBS-Installer heruntergeladen
+# und ausgeführt. Danach startet das Script LearnSpace 3D mit dem Backend aus
+# einem ls3d://-Link oder fragt nach dem Server.
+set -euo pipefail
+
+APP_TITLE="LS3D Launcher"
+INSTALL_URL="https://itsupport.wbstraining.de/tnlogin/Business/Install_LS3D.EXE"
+EXE_PATTERN="learnspace3d.exe"
+DXVK_DIR="/app/share/dxvk"
+DXVK_DLLS=(d3d8 d3d9 d3d10core d3d11 dxgi)
+
+USER_NAME="$(id -un)"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ls3d"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ls3d"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ls3d"
+SETTINGS_FILE="$CONFIG_DIR/settings"
+
+# Eigenes Prefix im App-Datenverzeichnis (~/.var/app/<id>/data/wine)
+export WINEPREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/wine"
+
+# Standardwerte, überschrieben durch die Einstellungsdatei
+# (FPS_LIMIT=0 in der Einstellungsdatei hebt die 60-FPS-Begrenzung auf)
+FPS_LIMIT=1
+NVIDIA_OFFLOAD=0
+LAST_BACKEND=""
+DPI=""
+
+info()  { zenity --info    --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/null || echo "$1"; }
+error() { zenity --error   --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/null || echo "Error: $1" >&2; }
+die()   { error "$1"; exit 1; }
+
+# Ja/Nein-Frage; Abbrechen oder kein Display zählt als "Nein"
+ask_yes_no() {
+    zenity --question --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/null
+}
+
+has_nvidia() {
+    compgen -G "/dev/nvidia[0-9]*" >/dev/null
+}
+
+load_settings() {
+    if [ -f "$SETTINGS_FILE" ]; then
+        # shellcheck source=/dev/null
+        source "$SETTINGS_FILE"
+    fi
+}
+
+save_settings() {
+    mkdir -p "$CONFIG_DIR"
+    {
+        printf 'FPS_LIMIT=%q\n' "$FPS_LIMIT"
+        printf 'NVIDIA_OFFLOAD=%q\n' "$NVIDIA_OFFLOAD"
+        printf 'LAST_BACKEND=%q\n' "$LAST_BACKEND"
+        printf 'DPI=%q\n' "$DPI"
+    } > "$SETTINGS_FILE"
+}
+
+ask_settings() {
+    NVIDIA_OFFLOAD=0
+    if has_nvidia && ask_yes_no "Eine NVIDIA-Grafikkarte wurde erkannt.\nSoll LearnSpace 3D mit der NVIDIA-GPU gestartet werden? (Render Offload)"; then
+        NVIDIA_OFFLOAD=1
+    fi
+    save_settings
+}
+
+# Locate learnspace3d.exe, preferring the default TriCAT install location
+find_exe() {
+    local found=""
+    local launch_dir="$WINEPREFIX/drive_c/users/$USER_NAME/AppData/Local/TriCAT/WBS"
+    if [ -s "$STATE_DIR/launch_dir" ]; then
+        launch_dir="$(head -n1 "$STATE_DIR/launch_dir")"
+    fi
+    found="$(find "$launch_dir" -maxdepth 1 -iname "$EXE_PATTERN" -print -quit 2>/dev/null || true)"
+    if [ -z "$found" ] && [ -d "$WINEPREFIX/drive_c" ]; then
+        found="$(find "$WINEPREFIX/drive_c" -iname "$EXE_PATTERN" -print -quit 2>/dev/null || true)"
+    fi
+    printf '%s' "$found"
+}
+
+# Copy the bundled DXVK DLLs into the prefix. Runs on every start so that a
+# DXVK update shipped with the Flatpak reaches the prefix as well.
+sync_dxvk() {
+    local dll
+    for dll in "${DXVK_DLLS[@]}"; do
+        cmp -s "$DXVK_DIR/x64/$dll.dll" "$WINEPREFIX/drive_c/windows/system32/$dll.dll" \
+            || cp -f "$DXVK_DIR/x64/$dll.dll" "$WINEPREFIX/drive_c/windows/system32/"
+        cmp -s "$DXVK_DIR/x32/$dll.dll" "$WINEPREFIX/drive_c/windows/syswow64/$dll.dll" \
+            || cp -f "$DXVK_DIR/x32/$dll.dll" "$WINEPREFIX/drive_c/windows/syswow64/"
+    done
+    if [ ! -f "$WINEPREFIX/.ls3d-dxvk" ]; then
+        for dll in "${DXVK_DLLS[@]}"; do
+            wine reg add 'HKCU\Software\Wine\DllOverrides' /v "$dll" /d native /f >/dev/null
+        done
+        wineserver -w
+        touch "$WINEPREFIX/.ls3d-dxvk"
+    fi
+}
+
+# Read Xft.dpi from the X server. GNOME/KDE set it according to the display
+# scaling (e.g. 192 for 200 %); Wine itself ignores it and stays at 96 DPI.
+detect_dpi() {
+    python3 -I - <<'EOF_PY' 2>/dev/null || true
+import ctypes, ctypes.util, re
+x11 = ctypes.CDLL(ctypes.util.find_library("X11"))
+x11.XOpenDisplay.restype = ctypes.c_void_p
+x11.XResourceManagerString.restype = ctypes.c_char_p
+x11.XResourceManagerString.argtypes = [ctypes.c_void_p]
+dpy = x11.XOpenDisplay(None)
+if dpy:
+    res = (x11.XResourceManagerString(dpy) or b"").decode(errors="ignore")
+    m = re.search(r"^Xft\.dpi:\s*(\d+)", res, re.M)
+    if m:
+        print(m.group(1))
+EOF_PY
+}
+
+# Apply the desktop scaling to Wine (LogPixels). DPI= in the settings file
+# overrides the detected value.
+sync_dpi() {
+    local dpi="${DPI:-}"
+    [ -n "$dpi" ] || dpi="$(detect_dpi)"
+    [[ "$dpi" =~ ^[0-9]+$ ]] && [ "$dpi" -ge 96 ] || dpi=96
+    if [ "$(cat "$WINEPREFIX/.ls3d-dpi" 2>/dev/null)" != "$dpi" ]; then
+        echo "Setting Wine DPI to $dpi"
+        wine reg add 'HKCU\Control Panel\Desktop' /v LogPixels /t REG_DWORD /d "$dpi" /f >/dev/null
+        wineserver -w
+        printf '%s\n' "$dpi" > "$WINEPREFIX/.ls3d-dpi"
+    fi
+}
+
+# Run wineboot without a display connection, so Wine does not show its
+# "updating configuration" window. Monitor entries are added on the next start.
+update_prefix() {
+    DISPLAY= WAYLAND_DISPLAY= wineboot "$1"
+    DISPLAY= WAYLAND_DISPLAY= wineserver -w
+    wine --version > "$WINEPREFIX/.ls3d-wine-version"
+}
+
+# Update the TriCAT starter (learnspace3d.exe) ourselves. Its built-in updater
+# does not follow the HTTP redirect of /download/launcher/latest to the update
+# mirror, gives up and only opens the download page in the browser.
+update_starter() {
+    local exe="$1"
+    local backend="$2"
+    local latest current tmp
+    # Only plain host names (optionally with port) are used to build the URL
+    [[ "$backend" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || return 0
+
+    latest="$(curl -fsS --max-time 10 "https://$backend/download/launcher/version?platform=windows" 2>/dev/null | tr -d '"[:space:]')" || return 0
+    [[ "$latest" =~ ^Starter_[A-Za-z0-9._-]+\.exe$ ]] || return 0
+    current="$(cat "$STATE_DIR/starter_version" 2>/dev/null || true)"
+    [ "$latest" != "$current" ] || return 0
+
+    echo "Updating LearnSpace 3D starter to $latest"
+    tmp="$exe.ls3d-new"
+    if ( curl -fsSL --retry 3 -o "$tmp" "https://$backend/download/launcher/latest?platform=windows"; rc=$?; echo 100; exit $rc ) \
+        | zenity --progress --pulsate --auto-close --no-cancel --title="$APP_TITLE" \
+                 --width=420 --text="Aktualisiere LearnSpace 3D …" 2>/dev/null \
+        && [ "$(head -c2 "$tmp")" = "MZ" ]; then
+        mv -f "$tmp" "$exe"
+        mkdir -p "$STATE_DIR"
+        printf '%s\n' "$latest" > "$STATE_DIR/starter_version"
+    else
+        echo "Warning: Starter update failed, starting the installed version."
+        rm -f "$tmp"
+    fi
+}
+
+download_installer() {
+    local target="$1"
+    mkdir -p "$(dirname "$target")"
+    if ! ( curl -fsSL --retry 3 -o "$target" "$INSTALL_URL"; rc=$?; echo 100; exit $rc ) \
+        | zenity --progress --pulsate --auto-close --no-cancel --title="$APP_TITLE" \
+                 --width=420 --text="Lade den WBS-Installer herunter …" 2>/dev/null; then
+        rm -f "$target"
+        return 1
+    fi
+}
+
+first_run_setup() {
+    ask_yes_no "LearnSpace 3D ist noch nicht installiert.\n\nDer LS3D Launcher ist ein <b>inoffizielles</b> Projekt und steht in keiner Verbindung zur WBS Training AG. Er lädt jetzt den offiziellen Windows-Installer von itsupport.wbstraining.de herunter und führt ihn mit Wine aus.\n\nFortfahren?" \
+        || exit 0
+
+    ask_settings
+
+    # A prefix without learnspace3d.exe is a leftover of an aborted setup
+    if [ -d "$WINEPREFIX" ]; then
+        echo "Removing incomplete Wine prefix: $WINEPREFIX"
+        wineserver -k 2>/dev/null || true
+        rm -rf "$WINEPREFIX"
+    fi
+    mkdir -p "$WINEPREFIX" "$STATE_DIR"
+    echo "Initialising Wine prefix: $WINEPREFIX"
+    update_prefix -i
+    # The WBS installer is a 32-bit program and needs the WoW64 part of the prefix
+    [ -f "$WINEPREFIX/drive_c/windows/syswow64/kernel32.dll" ] \
+        || die "Das Wine-Prefix unterstützt keine 32-Bit-Programme.\nBitte die Flatpak-Installation prüfen."
+
+    echo "Configuring DXVK..."
+    sync_dxvk
+    sync_dpi
+
+    local installer="$CACHE_DIR/Install_LS3D.EXE"
+    download_installer "$installer" \
+        || die "Der Download des WBS-Installers ist fehlgeschlagen.\nBitte die Internetverbindung prüfen."
+
+    info "Jetzt startet der offizielle WBS-Installer.\nBitte die Installation mit den vorgeschlagenen Einstellungen abschließen."
+    # Windows installers often return non-zero codes; success is verified below.
+    # Only wait for the installer itself: it starts LearnSpace 3D when it is done,
+    # and wineserver -w would block until that instance is closed again.
+    wine "$installer" || echo "Warning: The installer returned a non-zero exit code. Checking installation..."
+    rm -f "$installer"
+
+    local exe
+    exe="$(find_exe)"
+    [ -n "$exe" ] || die "$EXE_PATTERN wurde im Wine-Prefix nicht gefunden.\nDer WBS-Installer wurde nicht erfolgreich abgeschlossen."
+    dirname "$exe" > "$STATE_DIR/launch_dir"
+}
+
+# Extract the backend server from an ls3d:// URI (same rules as launch-ls3d.sh)
+parse_backend() {
+    local uri="$1"
+    local backend
+    if [[ "$uri" == *"?backend="* || "$uri" == *"&backend="* ]]; then
+        backend="$(printf '%s' "$uri" | sed -n 's/.*[?&]backend=\([^&]*\).*/\1/p')"
+    else
+        backend="${uri#ls3d:}"
+        backend="${backend##//}"
+    fi
+    printf '%s' "$backend" | sed 's:/*$::'
+}
+
+reset_prefix() {
+    ask_yes_no "Soll die LearnSpace-3D-Installation (Wine-Prefix) vollständig gelöscht werden?\nBeim nächsten Start wird neu installiert." \
+        || exit 0
+    wineserver -k 2>/dev/null || true
+    rm -rf "$WINEPREFIX" "$STATE_DIR"
+    info "Die Installation wurde zurückgesetzt."
+}
+
+usage() {
+    cat <<EOF
+Usage: ls3d-launcher [ls3d://BACKEND | ls3d:?backend=BACKEND]
+       ls3d-launcher --settings   change NVIDIA render offload
+       ls3d-launcher --reset      delete the Wine prefix and reinstall on next start
+EOF
+}
+
+load_settings
+
+case "${1:-}" in
+    -h|--help)  usage; exit 0 ;;
+    --reset)    reset_prefix; exit 0 ;;
+    --settings)
+        has_nvidia || { info "Es gibt keine Einstellungen, die geändert werden können."; exit 0; }
+        ask_settings; exit 0 ;;
+esac
+
+exe="$(find_exe)"
+if [ -z "$exe" ]; then
+    first_run_setup
+    exe="$(find_exe)"
+    # The WBS installer usually starts LearnSpace 3D itself; don't start a second instance
+    if pgrep -fi "$EXE_PATTERN" >/dev/null; then
+        exit 0
+    fi
+else
+    # A Wine update via Flatpak triggers a prefix update; do it quietly up front
+    if [ "$(cat "$WINEPREFIX/.ls3d-wine-version" 2>/dev/null)" != "$(wine --version)" ]; then
+        echo "Updating Wine prefix..."
+        update_prefix -u
+    fi
+    sync_dxvk
+    sync_dpi
+fi
+
+if [ -n "${1:-}" ]; then
+    backend="$(parse_backend "$1")"
+else
+    backend="$(zenity --entry --title="$APP_TITLE" --width=420 \
+        --text="Backend-Server für LearnSpace 3D:" --entry-text="$LAST_BACKEND" 2>/dev/null)" || exit 0
+fi
+[ -n "$backend" ] || die "Der Backend-Server konnte nicht ermittelt werden."
+
+if [ "$backend" != "$LAST_BACKEND" ]; then
+    LAST_BACKEND="$backend"
+    save_settings
+fi
+
+update_starter "$exe" "$backend"
+
+if [ "$FPS_LIMIT" = 1 ]; then
+    export DXVK_CONFIG="dxgi.maxFrameRate = 60; d3d9.maxFrameRate = 60"
+fi
+if [ "$NVIDIA_OFFLOAD" = 1 ]; then
+    export __NV_PRIME_RENDER_OFFLOAD=1
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export __VK_LAYER_NV_optimus=NVIDIA_only
+fi
+
+cd "$(dirname "$exe")"
+exec wine "$(basename "$exe")" -backend "$backend"

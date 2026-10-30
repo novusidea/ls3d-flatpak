@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=LS3D Launcher
+GenericName=Virtual Classroom Launcher
+GenericName[de]=Starter für virtuelle Klassenräume
+Comment=Unofficial launcher for WBS LearnSpace 3D
+Comment[de]=Inoffizieller Starter für WBS LearnSpace 3D
+Exec=ls3d-launcher %u
+Icon=de.novusidea.LS3DLauncher
+Terminal=false
+Categories=Education;
+Keywords=LearnSpace;LS3D;WBS;Classroom;
+Keywords[de]=LearnSpace;LS3D;WBS;Klassenraum;Unterricht;
+MimeType=x-scheme-handler/ls3d;
+StartupWMClass=learnspace3d.exe
+Actions=settings;reset;
+
+[Desktop Action settings]
+Name=Settings
+Name[de]=Einstellungen
+Exec=ls3d-launcher --settings
+
+[Desktop Action reset]
+Name=Reset Installation
+Name[de]=Installation zurücksetzen
+Exec=ls3d-launcher --reset

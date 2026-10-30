@@ -1,0 +1,113 @@
+name: Flatpak
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  APP_ID: de.novusidea.LS3DLauncher
+  PAGES_URL: https://novusidea.github.io/ls3d-flatpak
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate desktop file and metainfo
+        run: |
+          desktop-file-validate data/${APP_ID}.desktop
+          appstreamcli validate --no-net data/${APP_ID}.metainfo.xml
+      - name: Lint manifest
+        run: flatpak-builder-lint --exceptions manifest ${APP_ID}.yml
+
+  build:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import GPG key
+        id: gpg
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: ${{ env.APP_ID }}.yml
+          bundle: LS3DLauncher.flatpak
+          repository-name: flathub
+          repository-url: https://dl.flathub.org/repo/flathub.flatpakrepo
+          cache-key: flatpak-builder-${{ github.sha }}
+          gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
+
+      - name: Lint repository
+        run: flatpak-builder-lint --exceptions repo repo
+
+      - name: Attach bundle to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LS3DLauncher.flatpak
+
+      - name: Prepare Flatpak repository for GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          key_id='${{ steps.gpg.outputs.fingerprint }}'
+          flatpak build-update-repo --generate-static-deltas --prune \
+            --title="LS3D Launcher" --gpg-sign="$key_id" repo
+          gpg_key="$(gpg --export "$key_id" | base64 -w0)"
+          mkdir -p public
+          cp -a repo public/repo
+          cat > public/ls3d.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=LS3D Launcher
+          Url=${PAGES_URL}/repo/
+          Homepage=https://github.com/${{ github.repository }}
+          GPGKey=${gpg_key}
+          EOF
+          cat > public/${APP_ID}.flatpakref <<EOF
+          [Flatpak Ref]
+          Name=${APP_ID}
+          Branch=master
+          Title=LS3D Launcher
+          Url=${PAGES_URL}/repo/
+          SuggestRemoteName=ls3d
+          RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          IsRuntime=false
+          GPGKey=${gpg_key}
+          EOF
+          sed -i 's/^ *//' public/*.flatpakrepo public/*.flatpakref
+
+      - name: Upload Pages artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy-pages:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
