@@ -24,7 +24,7 @@ jobs:
           desktop-file-validate data/${APP_ID}.desktop
           appstreamcli validate --no-net data/${APP_ID}.metainfo.xml
       - name: Lint manifest
-        run: flatpak-builder-lint --exceptions manifest ${APP_ID}.yml
+        run: flatpak-builder-lint --exceptions --user-exceptions flatpak-builder-lint-exceptions.json manifest ${APP_ID}.yml
 
   build:
     needs: lint
@@ -55,7 +55,7 @@ jobs:
           gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
 
       - name: Lint repository
-        run: flatpak-builder-lint --exceptions repo repo
+        run: flatpak-builder-lint --exceptions --user-exceptions flatpak-builder-lint-exceptions.json repo repo
 
       - name: Attach bundle to release
         if: startsWith(github.ref, 'refs/tags/v')

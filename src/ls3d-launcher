@@ -1,10 +1,10 @@
 #!/bin/bash
-# LS3D Launcher - inoffizieller Starter für WBS LearnSpace 3D (Windows-Version unter Wine)
+# LS3D Launcher - unofficial launcher for WBS LearnSpace 3D (Windows version under Wine)
 #
-# Läuft innerhalb der Flatpak-Sandbox. Beim ersten Start wird ein Wine-Prefix
-# angelegt, DXVK eingerichtet und der offizielle WBS-Installer heruntergeladen
-# und ausgeführt. Danach startet das Script LearnSpace 3D mit dem Backend aus
-# einem ls3d://-Link oder fragt nach dem Server.
+# Runs inside the Flatpak sandbox. On first launch it creates a Wine prefix,
+# sets up DXVK and downloads and runs the official WBS installer. After that
+# the script starts LearnSpace 3D with the backend from an ls3d:// link or
+# asks for the server.
 set -euo pipefail
 
 APP_TITLE="LS3D Launcher"
@@ -19,11 +19,11 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ls3d"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ls3d"
 SETTINGS_FILE="$CONFIG_DIR/settings"
 
-# Eigenes Prefix im App-Datenverzeichnis (~/.var/app/<id>/data/wine)
+# Dedicated prefix in the app data directory (~/.var/app/<id>/data/wine)
 export WINEPREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/wine"
 
-# Standardwerte, überschrieben durch die Einstellungsdatei
-# (FPS_LIMIT=0 in der Einstellungsdatei hebt die 60-FPS-Begrenzung auf)
+# Defaults, overridden by the settings file
+# (FPS_LIMIT=0 in the settings file removes the 60 FPS limit)
 FPS_LIMIT=1
 NVIDIA_OFFLOAD=0
 LAST_BACKEND=""
@@ -33,7 +33,7 @@ info()  { zenity --info    --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/n
 error() { zenity --error   --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/null || echo "Error: $1" >&2; }
 die()   { error "$1"; exit 1; }
 
-# Ja/Nein-Frage; Abbrechen oder kein Display zählt als "Nein"
+# Yes/no question; cancel or no display counts as "no"
 ask_yes_no() {
     zenity --question --title="$APP_TITLE" --width=420 --text="$1" 2>/dev/null
 }
