@@ -61,7 +61,7 @@ save_settings() {
 
 ask_settings() {
     NVIDIA_OFFLOAD=0
-    if has_nvidia && ask_yes_no "Eine NVIDIA-Grafikkarte wurde erkannt.\nSoll LearnSpace 3D mit der NVIDIA-GPU gestartet werden? (Render Offload)"; then
+    if has_nvidia && ask_yes_no "An NVIDIA graphics card was detected.\nStart LearnSpace 3D on the NVIDIA GPU? (Render Offload)"; then
         NVIDIA_OFFLOAD=1
     fi
     save_settings
@@ -159,7 +159,7 @@ update_starter() {
     tmp="$exe.ls3d-new"
     if ( curl -fsSL --retry 3 -o "$tmp" "https://$backend/download/launcher/latest?platform=windows"; rc=$?; echo 100; exit $rc ) \
         | zenity --progress --pulsate --auto-close --no-cancel --title="$APP_TITLE" \
-                 --width=420 --text="Aktualisiere LearnSpace 3D …" 2>/dev/null \
+                 --width=420 --text="Updating LearnSpace 3D …" 2>/dev/null \
         && [ "$(head -c2 "$tmp")" = "MZ" ]; then
         mv -f "$tmp" "$exe"
         mkdir -p "$STATE_DIR"
@@ -175,14 +175,14 @@ download_installer() {
     mkdir -p "$(dirname "$target")"
     if ! ( curl -fsSL --retry 3 -o "$target" "$INSTALL_URL"; rc=$?; echo 100; exit $rc ) \
         | zenity --progress --pulsate --auto-close --no-cancel --title="$APP_TITLE" \
-                 --width=420 --text="Lade den WBS-Installer herunter …" 2>/dev/null; then
+                 --width=420 --text="Downloading the WBS installer …" 2>/dev/null; then
         rm -f "$target"
         return 1
     fi
 }
 
 first_run_setup() {
-    ask_yes_no "LearnSpace 3D ist noch nicht installiert.\n\nDer LS3D Launcher ist ein <b>inoffizielles</b> Projekt und steht in keiner Verbindung zur WBS Training AG. Er lädt jetzt den offiziellen Windows-Installer von itsupport.wbstraining.de herunter und führt ihn mit Wine aus.\n\nFortfahren?" \
+    ask_yes_no "LearnSpace 3D is not installed yet.\n\nLS3D Launcher is an <b>unofficial</b> project and is not affiliated with WBS Training AG. It will now download the official Windows installer from itsupport.wbstraining.de and run it with Wine.\n\nContinue?" \
         || exit 0
 
     ask_settings
@@ -198,7 +198,7 @@ first_run_setup() {
     update_prefix -i
     # The WBS installer is a 32-bit program and needs the WoW64 part of the prefix
     [ -f "$WINEPREFIX/drive_c/windows/syswow64/kernel32.dll" ] \
-        || die "Das Wine-Prefix unterstützt keine 32-Bit-Programme.\nBitte die Flatpak-Installation prüfen."
+        || die "The Wine prefix does not support 32-bit programs.\nPlease check the Flatpak installation."
 
     echo "Configuring DXVK..."
     sync_dxvk
@@ -206,9 +206,9 @@ first_run_setup() {
 
     local installer="$CACHE_DIR/Install_LS3D.EXE"
     download_installer "$installer" \
-        || die "Der Download des WBS-Installers ist fehlgeschlagen.\nBitte die Internetverbindung prüfen."
+        || die "Downloading the WBS installer failed.\nPlease check your internet connection."
 
-    info "Jetzt startet der offizielle WBS-Installer.\nBitte die Installation mit den vorgeschlagenen Einstellungen abschließen."
+    info "The official WBS installer will start now.\nPlease complete the installation with the suggested settings."
     # Windows installers often return non-zero codes; success is verified below.
     # Only wait for the installer itself: it starts LearnSpace 3D when it is done,
     # and wineserver -w would block until that instance is closed again.
@@ -217,7 +217,7 @@ first_run_setup() {
 
     local exe
     exe="$(find_exe)"
-    [ -n "$exe" ] || die "$EXE_PATTERN wurde im Wine-Prefix nicht gefunden.\nDer WBS-Installer wurde nicht erfolgreich abgeschlossen."
+    [ -n "$exe" ] || die "$EXE_PATTERN was not found in the Wine prefix.\nThe WBS installer did not complete successfully."
     dirname "$exe" > "$STATE_DIR/launch_dir"
 }
 
@@ -235,11 +235,11 @@ parse_backend() {
 }
 
 reset_prefix() {
-    ask_yes_no "Soll die LearnSpace-3D-Installation (Wine-Prefix) vollständig gelöscht werden?\nBeim nächsten Start wird neu installiert." \
+    ask_yes_no "Delete the LearnSpace 3D installation (Wine prefix) completely?\nIt will be reinstalled on the next start." \
         || exit 0
     wineserver -k 2>/dev/null || true
     rm -rf "$WINEPREFIX" "$STATE_DIR"
-    info "Die Installation wurde zurückgesetzt."
+    info "The installation has been reset."
 }
 
 usage() {
@@ -256,7 +256,7 @@ case "${1:-}" in
     -h|--help)  usage; exit 0 ;;
     --reset)    reset_prefix; exit 0 ;;
     --settings)
-        has_nvidia || { info "Es gibt keine Einstellungen, die geändert werden können."; exit 0; }
+        has_nvidia || { info "There are no settings that can be changed."; exit 0; }
         ask_settings; exit 0 ;;
 esac
 
@@ -282,9 +282,9 @@ if [ -n "${1:-}" ]; then
     backend="$(parse_backend "$1")"
 else
     backend="$(zenity --entry --title="$APP_TITLE" --width=420 \
-        --text="Backend-Server für LearnSpace 3D:" --entry-text="$LAST_BACKEND" 2>/dev/null)" || exit 0
+        --text="Backend server for LearnSpace 3D:" --entry-text="$LAST_BACKEND" 2>/dev/null)" || exit 0
 fi
-[ -n "$backend" ] || die "Der Backend-Server konnte nicht ermittelt werden."
+[ -n "$backend" ] || die "The backend server could not be determined."
 
 if [ "$backend" != "$LAST_BACKEND" ]; then
     LAST_BACKEND="$backend"

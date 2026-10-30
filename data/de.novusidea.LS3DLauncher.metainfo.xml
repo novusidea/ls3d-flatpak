@@ -92,7 +92,7 @@
   </content_rating>
 
   <releases>
-    <release version="1.0.0" date="2026-10-29">
+    <release version="0.0.1" date="2026-10-29">
       <description>
         <p>First release.</p>
         <p xml:lang="de">Erste Version.</p>
